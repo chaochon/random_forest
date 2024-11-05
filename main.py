@@ -1,12 +1,12 @@
 from sklearn.datasets import fetch_california_housing
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import mean_squared_error, f1_score, accuracy_score, recall_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import mean_squared_error, f1_score, accuracy_score, recall_score, confusion_matrix
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
 
 
-class HousingPricePredictor:
+class Predictor:
     def __init__(self, n_estimators=100, max_depth=None, random_state=42):
         """初始化随机森林回归模型"""
         self.n_estimators = n_estimators
@@ -15,8 +15,7 @@ class HousingPricePredictor:
         self.model = RandomForestClassifier(
             n_estimators=self.n_estimators,
             max_depth=self.max_depth,
-            random_state=self.random_state,
-            verbose=2
+            random_state=self.random_state
         )
 
 
@@ -58,18 +57,31 @@ def encode_season(season_column):
 if __name__ == "__main__":
 
     # load raw data
-    data_train_df = pd.read_csv('./dataset/train.csv')
-    data_test_df = pd.read_csv('./dataset/test.csv')
+    data_train_df = pd.read_csv('../dataset/train.csv')
+    data_test_df = pd.read_csv('../dataset/test.csv')
 
-    # crop feature
-    print("data_train length: {} {}".format(len(data_train_df), len(data_train_df.columns)))
-    data_train_df.dropna(axis=1, thresh=len(data_train_df) * 0.5, inplace=True)
-    print("data_train length after 50% dropout: {} {}".format(len(data_train_df), len(data_train_df.columns)))
+    print("------------data preprocessing----------------------------------")
+    print("raw train sample length: {} features: {}".format(len(data_train_df), len(data_train_df.columns)))
 
-    # fill value with mode
+    # 1.crop feature with many invalid value
+    invalid_ratio = data_train_df.isnull().mean() * 100
+    pd.options.display.max_rows = None
+    pd.options.display.max_columns = None
+    print("invalid value ratio (%):\n", invalid_ratio)
+
+    data_train_df.dropna(inplace=True, subset=['sii'])
+    data_train_df.dropna(axis=1, thresh=len(data_train_df) * 0.70, inplace=True)
+    print("train sample length after crop: {} features: {}".format(len(data_train_df), len(data_train_df.columns)))
+
+    invalid_ratio = data_train_df.isnull().mean() * 100
+    print("invalid value ratio (%) after crop:\n", invalid_ratio)
+    pd.reset_option('display.max_rows')
+    pd.reset_option('display.max_columns')
+
+    # 2.fill value with mode
     data_train_df = data_train_df.apply(lambda x: x.fillna(x.mode()[0]))
 
-    # 对每一个季节特征进行编码并添加到DataFrame
+    # 3.对每一个季节特征进行编码并添加到DataFrame
     season_col_names = []
     for i, season_col in enumerate(data_train_df.columns):
         if 'Season' in season_col:  # 检查列名中是否包含 'season'
@@ -88,31 +100,38 @@ if __name__ == "__main__":
     # with open('output_train_clear2.txt', 'w') as f:
     #     f.write(data_train_df.to_string(index=False))
 
-    print("data_train length after convert season features: {} {}".format(len(data_train_df), len(data_train_df.columns)))
+    print("train sample length after convert season: {} features: {}".format(len(data_train_df), len(data_train_df.columns)))
 
-    # random forest
-    predictor = HousingPricePredictor(n_estimators=100, max_depth=10)
+    print("------------divide sample into train set and valid set------------")
     # 获取特征矩阵（从第二列到倒数第二列）
     X = data_train_df.iloc[:, 1:-1]  # 选择从第二列到倒数第二列
 
     # 获取标签向量（最后一列）
     y = data_train_df.iloc[:, -1]  # 选择最后一列
 
-    X_train, X_test, y_train, y_test = train_test_split(X.to_numpy(), y.to_numpy(), test_size=0.4, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42) #random_state=42
+    print("X_train len: {} y_train len: {} X_test len: {} y_test len: {}".format(len(X_train), len(y_train), len(X_test), len(y_test)))
+    print("train label: \n", y_train.value_counts(), "\ntest label: \n", y_test.value_counts())
 
+    # random forest
+    predictor = Predictor(n_estimators=100, max_depth=10)
     predictor.train(X_train, y_train)
 
     # 计算指标
     y_pred = predictor.test(X_test)
     y_pred, y_test = y_pred.astype(int), y_test.astype(int)
 
-    f1 = f1_score(y_test, y_pred, average='micro')
+    f1 = f1_score(y_test, y_pred, average='weighted')
     accuracy = accuracy_score(y_test, y_pred)
-    recall = recall_score(y_test, y_pred, average='micro')
-    # 输出结果
+    recall = recall_score(y_test, y_pred, average='weighted')
+    cm = confusion_matrix(y_test, y_pred)
+
+    print("------------metric on the valid set-----------------------------")
     print(f"Accuracy: {accuracy:.9f}")
     print(f"Recall: {recall:.9f}")
     print(f"F1-score: {f1:.9f}")
+    print('confusion matrix:\n', cm)
+
     # decision tress
 
     # xgboost
